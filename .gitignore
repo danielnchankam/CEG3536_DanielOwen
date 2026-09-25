@@ -1,5 +1,9 @@
 Debug/
 Release/
-*.o
+build/
 *.elf
+*.bin
 *.map
+*.o
+*.su
+*.list
