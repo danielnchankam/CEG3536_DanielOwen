@@ -51,6 +51,12 @@
     .equ NVIC_PRIO_MAX,         0x00        /* 0 = priorité la plus élevée   */
     .equ SYSTICK_CTRL,          0xE000E010
     .equ SYSTICK_LOAD,          0xE000E014
+/* DWT : compteur de cycles pour l'essai T6 (PM0264) */
+    .equ DEMCR,                 0xE000EDFC  /* Debug Exception and Monitor Control */
+    .equ DEMCR_TRCENA,          (1 << 24)   /* active le DWT                 */
+    .equ DWT_CTRL,              0xE0001000
+    .equ DWT_CTRL_CYCCNTENA,    (1 << 0)    /* active CYCCNT                 */
+    .equ DWT_CYCCNT,            0xE0001004  /* +1 par cycle d'horloge (4 MHz) */
     .equ SYSTICK_VAL,           0xE000E018
 
 /* ---- Brochage de la plateforme (guide, p. 25-29) ---------------------- */
@@ -96,4 +102,4 @@
     .equ TOUCH_SIGNAL_MS,       100         /* extinction brève (E7)         */
 /* delay_ms : boucle calibrée. Horloge après réinitialisation : MSI 4 MHz.
  * Valeur de départ ~1000 itérations/ms ; À CALIBRER à l'oscilloscope (E8). */
-    .equ DELAY_BOUCLES_PAR_MS,  1000
+    .equ DELAY_BOUCLES_PAR_MS,  1254        /* calibré (T6) : 1000 × 1 000 000 / 797 532 */

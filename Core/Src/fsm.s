@@ -4,7 +4,7 @@
  * Routines exportées : fsm_init (fournie), fsm_step (À COMPLÉTER)
  * Variables (.bss)   : etat, touch_enabled, compteur_transitions,
  *                      clignote_compteur, clignote_phase, touch_signal_compteur,
- *                      prochain_sens (ajoutée)
+ *                      prochain_sens (ajoutée), blink_cycles et blink_last (T6)
  *
  * États (section 3) : ETAT_ARRET (rouge fixe), ETAT_MARCHE_AVANT (verte),
  *                     ETAT_MARCHE_ARRIERE (bleue), ETAT_ARRET_URGENCE (rouge 2 Hz)
@@ -28,6 +28,10 @@ clignote_compteur:      .space  4   /* pas de scrutation écoulés dans la demi-
 clignote_phase:         .space  4   /* 0 rouge éteinte, 1 rouge allumée (E5)     */
 touch_signal_compteur:  .space  4   /* pas restants d'extinction brève (E7)      */
 prochain_sens:          .space  4   /* 0 = MARCHE_AVANT ensuite, 1 = MARCHE_ARRIERE (E2) */
+    .global blink_cycles
+blink_cycles:           .space  4   /* T6 : cycles entre deux basculements (~1 000 000 à 4 MHz) */
+    .global blink_last
+blink_last:             .space  4   /* T6 : DWT_CYCCNT au dernier basculement    */
 
 /* ---- Table état -> DEL (un octet par état) ------------------------------ */
     .section .rodata
@@ -62,6 +66,19 @@ fsm_init:
     ldr     r0, =touch_signal_compteur
     str     r1, [r0]
     ldr     r0, =prochain_sens          /* ajouté : premier départ en marche avant */
+    str     r1, [r0]
+    ldr     r0, =blink_cycles
+    str     r1, [r0]
+    ldr     r0, =blink_last
+    str     r1, [r0]
+    /* T6 : activer le compteur de cycles DWT_CYCCNT */
+    ldr     r0, =DEMCR
+    ldr     r1, [r0]
+    orr     r1, r1, #DEMCR_TRCENA
+    str     r1, [r0]
+    ldr     r0, =DWT_CTRL
+    ldr     r1, [r0]
+    orr     r1, r1, #DWT_CTRL_CYCCNTENA
     str     r1, [r0]
     bl      fsm_maj_del
     pop     {r4, pc}
@@ -115,6 +132,10 @@ fsm_step:
     ldr     r0, =clignote_phase
     movs    r1, #1
     str     r1, [r0]                    /* la rouge est déjà allumée par l'ISR */
+    ldr     r0, =DWT_CYCCNT
+    ldr     r1, [r0]
+    ldr     r0, =blink_last
+    str     r1, [r0]                    /* T6 : origine de la première demi-période */
 fsm_pas_estop:
 
     /* B. */
@@ -214,6 +235,16 @@ fsm_maj_del:
     ldr     r3, =clignote_phase
     ldr     r0, [r3]
     eor     r0, r0, #1
+    str     r0, [r3]
+    /* T6 : blink_cycles = DWT_CYCCNT - blink_last ; blink_last = DWT_CYCCNT
+     * (r1 et r2 servent après : seuls r0, r3 et r12 sont utilisés ici)     */
+    ldr     r3, =DWT_CYCCNT
+    ldr     r0, [r3]
+    ldr     r3, =blink_last
+    ldr     r12, [r3]
+    str     r0, [r3]
+    sub     r0, r0, r12
+    ldr     r3, =blink_cycles
     str     r0, [r3]
 fsm_clig_garde:
     str     r1, [r2]

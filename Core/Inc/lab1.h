@@ -39,5 +39,6 @@ extern volatile uint32_t etat;
 extern volatile uint32_t estop_flag;
 extern volatile uint32_t touch_enabled;
 extern volatile uint32_t compteur_transitions;
+extern volatile uint32_t blink_cycles;   /* T6 : cycles entre deux basculements */
 
 #endif /* LAB1_H */
