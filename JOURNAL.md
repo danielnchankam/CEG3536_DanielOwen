@@ -113,29 +113,35 @@ Démonstration finale de la section A02 : mardi 8 décembre. Le dossier final du
 ### Séance 2 — 29 septembre 2026
 *Réalise : Owen Ouoba · Valide : Daniel Nchankam*
 
-- **Objectifs :**
-- **Fait :**
-- **Décisions :**
+- **Objectifs :** vérifier E1 à E9 sur la carte (essais T1 à T10) ; mesurer le clignotement ; démonstration devant l'assistant.
+- **Fait :** essais T1 à T10 dans STM32CubeIDE (Live Expressions sur les bits IDR/ODR, `etat`, `estop_flag`, `touch_enabled`, `compteur_transitions`, EXTI_RPR1) ; ajout de la mesure du clignotement par le compteur de cycles DWT (`blink_cycles`) ; calibration de `delay_ms` ; démonstration.
+- **Décisions :** mesurer la période de clignotement avec DWT_CYCCNT plutôt qu'à l'oscilloscope (méthode de l'énoncé v1.2) ; `DELAY_BOUCLES_PAR_MS` passé de 1000 à 1254 (règle de trois sur la mesure) ; niveaux actifs et PUPDR de `registres.inc` conservés, confirmés par T4.
 - **Difficultés et solutions :**
-- **Essais et mesures :**
-- **Validations Git :**
+  - Erreur « Unknown MCU found on target » au lancement du débogueur : la sonde ST-LINK était détectée mais pas le processeur ; connexion rétablie avant les essais.
+  - `blink_cycles` introuvable dans Live Expressions : une session de débogage de l'ancien projet (`CEG3536_Lab1_Demarrage`) était encore ouverte ; réglé en la fermant.
+  - T6 hors tolérance au premier essai (199 ms au lieu de 250 ms) : corrigé par la calibration.
+  - La pile d'appels de T5 affiche `estop_init()` à l'adresse 0x08000306, qui est en réalité celle de `EXTI2_IRQHandler` (nom erroné de GDB, l'assembleur ne fournit pas d'information de fonction).
+- **Essais et mesures :** IDR relâché = 0 et appuyé = 1 pour PC13, PB2 et PB5 ; `blink_cycles` = 797 532 cycles (199 ms) avant calibration, 988 034 cycles (247 ms, −1,2 %) après ; 3,0 cycles par itération de `delay_ms`. Voir le tableau ci-dessous.
+- **Validations Git :** OwenOuoba — « T6 : mesure du clignotement par DWT_CYCCNT et calibration de delay_ms » ; « JOURNAL : séance 2 et tableau des essais ».
 
 ---
 
 ## Tableau des essais (T1 à T10)
 
+Preuves : captures de l'annexe A du rapport (fig. A.1 à A.13).
+
 | Essai | Date | Résultat observé | Verdict | Preuve (fichier) |
 |---|---|---|---|---|
-| T1 — Réinitialisation | | | | |
-| T2 — Cycle User | | | | |
-| T3 — Anti-rebond | | | | |
-| T4 — Niveaux logiques | | | | |
-| T5 — E-Stop | | | | |
-| T6 — Clignotement | | | | |
-| T7 — Acquittement | | | | |
-| T8 — User ignoré en urgence | | | | |
-| T9 — Touch En hors urgence | | | | |
-| T10 — Robustesse | | | | |
+| T1 — Réinitialisation | 29 sept. | Rouge seule allumée immédiatement après uC Reset ; `etat = 0`. | Conforme | Observation en séance (capture non conservée) |
+| T2 — Cycle User | 29 sept. | Rouge → verte → rouge → bleue → rouge ; une seule DEL à la fois. | Conforme | Observation en séance (capture non conservée) |
+| T3 — Anti-rebond | 29 sept. | `compteur_transitions = 20` après 20 appuis ; User maintenu : 1 seule transition. | Conforme | Fig. A.2, A.13 |
+| T4 — Niveaux logiques | 29 sept. | Relâché = 0, appuyé = 1 pour PC13, PB2, PB5 : actif haut, PUPDR = 00 confirmés. | Conforme | Fig. A.1, A.7 |
+| T5 — E-Stop | 29 sept. | Arrêt dans `EXTI2_IRQHandler`, appelée depuis `delay_ms` ; à l'entrée : verte = 1, RPR1 = 1 ; ensuite `etat = 3`. | Conforme | Fig. A.3 |
+| T6 — Clignotement | 29 sept. | Avant calibration : 797 532 cycles = 199 ms (−20 %). Après : 988 034 cycles = 247 ms (−1,2 %). | Conforme après correction | Fig. A.4, A.5 |
+| T7 — Acquittement | 29 sept. | E-Stop relâché : `etat` 3 → 0. E-Stop maintenu (PB2 = 1) : `etat` reste 3. | Conforme | Fig. A.6, A.7 |
+| T8 — User ignoré en urgence | 29 sept. | `etat = 3` et `compteur_transitions` inchangés malgré les appuis sur User. | Conforme | Fig. A.8, A.9 |
+| T9 — Touch En hors urgence | 29 sept. | `touch_enabled` 0 → 1 → 0 en ARRÊT ; extinction brève visible. | Conforme | Fig. A.10, A.11 |
+| T10 — Robustesse | 29 sept. | E-Stop + Touch En maintenus : `etat = 3`. User + Touch En : une seule DEL allumée (somme ODR = 1). | Conforme | Fig. A.12, A.13 |
 
 ---
 
