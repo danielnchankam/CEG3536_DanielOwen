@@ -7,7 +7,7 @@
  * la pile, copie .data, efface .bss, appelle SystemInit puis main.
  * ------------------------------------------------------------------------- */
 #include "registres.inc"
-
+#include "registres_lab2.inc"
     .syntax unified
     .cpu    cortex-m33
     .thumb
@@ -29,14 +29,24 @@ SystemInit:
  * Ne retourne jamais.                                                       */
     .global main
     .type   main, %function
-main:
-    bl      gpio_init               /* horloges, DEL en sortie, boutons en entrée */
-    bl      estop_init              /* EXTI2 / NVIC pour PB2 (à compléter)  */
-    bl      fsm_init                /* état ARRÊT, DEL rouge seule (E1)     */
 
+
+main:
+    bl      gpio_init               /* DEL en sortie, boutons en entrée      */
+    bl      buzzer_init             /* PA0 en sortie, silence                */
+    bl      motor_init              /* TIM1 PWM 20 kHz à 0 %, STB = 0        */
+    bl      encoder_init            /* EXTI0 sur PB0, priorité 1             */
+    bl      estop_init              /* EXTI2 sur PB2, priorité 0             */
+    ldr     r0, =SYSTICK_PERIODE_US
+    bl      systick_init            /* 1 ms, priorité 2                      */
+    bl      fsm_init                /* ARRÊT, DEL rouge seule (E1)           */
 boucle_principale:
-    bl      fsm_step                /* un pas : boutons, drapeau E-Stop, DEL */
-    movs    r0, #PERIODE_SCRUTATION_MS
-    bl      delay_ms
+    ldr     r0, =tick_1ms
+    ldr     r1, [r0]
+    cmp     r1, #0
+    beq     boucle_principale       /* attente du prochain tick              */
+    movs    r1, #0
+    str     r1, [r0]                /* tick consommé                         */
+    bl      fsm_step
     b       boucle_principale
     .size   main, .-main

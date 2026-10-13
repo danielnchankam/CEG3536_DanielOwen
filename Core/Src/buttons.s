@@ -1,9 +1,8 @@
 /* ---------------------------------------------------------------------------
  * buttons.s — lecture des boutons, anti-rebond, temporisation
- *             (CEG 3536, laboratoire 1)
+ *             (CEG 3536, laboratoire 1) — CORRIGÉ
  *
- * Routines exportées (AAPCS) : button_raw (fournie), button_pressed (À FAIRE),
- *                              delay_ms (fournie, boucle calibrée)
+ * Routines exportées (AAPCS) : button_raw, button_pressed, delay_ms
  * Variables (.bss)            : btn_valide[3], btn_compteur[3]
  * ------------------------------------------------------------------------- */
 #include "registres.inc"
@@ -60,21 +59,18 @@ button_raw_invalide:
 
 /* uint32_t button_pressed(uint32_t id)
  * r0 = identifiant. Retour r0 = 1 si un appui vient d'être VALIDÉ (front),
- * 0 sinon. Doit être appelée périodiquement (toutes les PERIODE_SCRUTATION_MS).
+ * 0 sinon. Appelée toutes les PERIODE_SCRUTATION_MS.
  *
- * À FAIRE (E3) — anti-rebond par échantillons consécutifs :
- *   1. lire le niveau brut : bl button_raw (r0 = 0/1)
- *   2. si niveau == btn_valide[id] : btn_compteur[id] = 0 ; retourner 0
- *   3. sinon btn_compteur[id]++ ;
- *      si btn_compteur[id] < ANTIREBOND_MS / PERIODE_SCRUTATION_MS : retourner 0
- *   4. sinon (niveau stable depuis la fenêtre) : btn_valide[id] = niveau ;
- *      btn_compteur[id] = 0 ; retourner 1 si niveau == 1 (front d'appui), 0 sinon
- *   Un appui maintenu ne produit qu'un seul événement ; le relâchement est
- *   validé avec la même fenêtre mais ne retourne jamais 1.
+ * Anti-rebond par échantillons consécutifs (E3) :
+ *   - si le niveau brut == btn_valide[id] : compteur = 0, retour 0 ;
+ *   - sinon compteur++ ; tant que compteur < ANTIREBOND_MS / PERIODE_SCRUTATION_MS,
+ *     retour 0 (un rebond qui revient au niveau validé remet le compteur à 0) ;
+ *   - à la fenêtre atteinte : btn_valide[id] = niveau, compteur = 0,
+ *     retour 1 si le nouveau niveau est « appuyé », 0 s'il est « relâché ».
+ * Un appui maintenu ne produit donc qu'un seul événement.
  *
- * AAPCS : la routine appelle button_raw, donc LR est sauvegardé. On empile
- * {r4, r5, r6, lr} (16 octets) pour garder la pile alignée sur 8 octets à
- * l'appel de button_raw. r4 = id, r5 = niveau brut, r6 = adresse de tableau. */
+ * AAPCS : appelle button_raw -> LR sauvegardé ; push {r4, r5, r6, lr} =
+ * 16 octets, pile alignée sur 8. r4 = id, r5 = niveau brut, r6 = &btn_valide.  */
     .global button_pressed
     .type   button_pressed, %function
 button_pressed:
@@ -84,61 +80,26 @@ button_pressed:
     mov     r4, r0                      /* r4 = id */
     bl      button_raw
     mov     r5, r0                      /* r5 = niveau brut normalisé */
-
-    /* ----- À COMPLÉTER : étapes 2 à 4 ci-dessus -----
-     * Indices : ldr r6, =btn_valide ; ldr r0, [r6, r4, lsl #2]
-     *           ldr r6, =btn_compteur ; ... ; str r0, [r6, r4, lsl #2]
-     */
-
-    /* Étape 2 : niveau identique au niveau validé ? */
     ldr     r6, =btn_valide
-    ldr     r0, [r6, r4, lsl #2]        /* r0 = btn_valide[id] */
-    cmp     r0, r5
-    bne     bp_different
-    ldr     r6, =btn_compteur
-    movs    r0, #0
-    str     r0, [r6, r4, lsl #2]        /* btn_compteur[id] = 0 (rebond annulé) */
-    b       button_pressed_non
-
-bp_different:
-    /* Étape 3 : un échantillon de plus différent du niveau validé */
-    ldr     r6, =btn_compteur
-    ldr     r0, [r6, r4, lsl #2]
+    ldr     r1, [r6, r4, lsl #2]        /* r1 = niveau validé courant */
+    ldr     r2, =btn_compteur
+    cmp     r5, r1
+    bne     button_pressed_different
+    movs    r0, #0                      /* même niveau : rien de nouveau */
+    str     r0, [r2, r4, lsl #2]        /* compteur = 0 */
+    pop     {r4, r5, r6, pc}
+button_pressed_different:
+    ldr     r0, [r2, r4, lsl #2]
     adds    r0, r0, #1
-    str     r0, [r6, r4, lsl #2]        /* btn_compteur[id]++ */
+    str     r0, [r2, r4, lsl #2]
     cmp     r0, #(ANTIREBOND_MS / PERIODE_SCRUTATION_MS)
-    blo     button_pressed_non          /* fenêtre pas encore atteinte (non signé) */
-
-    /* Étape 4 : niveau stable sur toute la fenêtre -> on le valide */
+    blo     button_pressed_non          /* fenêtre pas encore écoulée */
+    str     r5, [r6, r4, lsl #2]        /* niveau stable : validé */
     movs    r0, #0
-    str     r0, [r6, r4, lsl #2]        /* btn_compteur[id] = 0 (r6 = btn_compteur) */
-    ldr     r6, =btn_valide
-    str     r5, [r6, r4, lsl #2]        /* btn_valide[id] = niveau */
+    str     r0, [r2, r4, lsl #2]        /* compteur = 0 */
     mov     r0, r5                      /* 1 = front d'appui, 0 = relâchement */
     pop     {r4, r5, r6, pc}
-
 button_pressed_non:
-    movs    r0, #0                      /* squelette : aucun événement */
+    movs    r0, #0
     pop     {r4, r5, r6, pc}
     .size   button_pressed, .-button_pressed
-
-/* void delay_ms(uint32_t ms)
- * Temporisation par boucle calibrée (admise au laboratoire 1, E8).
- * Hypothèse : horloge MSI de 4 MHz après réinitialisation, code en flash.
- * DELAY_BOUCLES_PAR_MS (registres.inc) doit être CALIBRÉE par mesure au point
- * de test et la valeur retenue rapportée. SysTick sera exigé au laboratoire 2.
- * Registres modifiés : r0, r1 (routine feuille).                            */
-    .global delay_ms
-    .type   delay_ms, %function
-delay_ms:
-    cbz     r0, delay_ms_fin
-delay_ms_boucle_ms:
-    ldr     r1, =DELAY_BOUCLES_PAR_MS
-delay_ms_boucle_int:
-    subs    r1, r1, #1
-    bne     delay_ms_boucle_int
-    subs    r0, r0, #1
-    bne     delay_ms_boucle_ms
-delay_ms_fin:
-    bx      lr
-    .size   delay_ms, .-delay_ms

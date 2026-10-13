@@ -39,6 +39,8 @@ extern volatile uint32_t etat;
 extern volatile uint32_t estop_flag;
 extern volatile uint32_t touch_enabled;
 extern volatile uint32_t compteur_transitions;
-extern volatile uint32_t blink_cycles;   /* T6 : cycles entre deux basculements */
+extern volatile uint32_t blink_cycles;      /* T6 : cycles DWT entre deux basculements */
+extern volatile uint32_t btn_valide[3];     /* niveau validé par bouton (T3)          */
+extern volatile uint32_t btn_compteur[3];   /* échantillons différents consécutifs    */
 
 #endif /* LAB1_H */

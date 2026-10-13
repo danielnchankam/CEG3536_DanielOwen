@@ -39,7 +39,7 @@
     .equ EXTI_IMR1,             0x80        /* masque d'interruption         */
     .equ EXTI_EMR1,             0x84
     .equ EXTI_LIGNE2,           (1 << 2)
-    .equ EXTICR1_EXTI2_POS,     16          /* champ EXTI2 : bits 18:16      */
+    .equ EXTICR1_EXTI2_POS,     16          /* champ EXTI2 : bits 23:16 (8 bits) */
     .equ EXTICR_PORT_B,         0x01        /* 0 = A, 1 = B, 2 = C, ...      */
 
 /* ---- NVIC et SysTick (Cortex-M33, PM0264) ----------------------------- */
@@ -51,13 +51,14 @@
     .equ NVIC_PRIO_MAX,         0x00        /* 0 = priorité la plus élevée   */
     .equ SYSTICK_CTRL,          0xE000E010
     .equ SYSTICK_LOAD,          0xE000E014
-/* DWT : compteur de cycles pour l'essai T6 (PM0264) */
-    .equ DEMCR,                 0xE000EDFC  /* Debug Exception and Monitor Control */
-    .equ DEMCR_TRCENA,          (1 << 24)   /* active le DWT                 */
-    .equ DWT_CTRL,              0xE0001000
-    .equ DWT_CTRL_CYCCNTENA,    (1 << 0)    /* active CYCCNT                 */
-    .equ DWT_CYCCNT,            0xE0001004  /* +1 par cycle d'horloge (4 MHz) */
     .equ SYSTICK_VAL,           0xE000E018
+
+/* ---- DWT : compteur de cycles (Cortex-M33, PM0264) — mesure T6 ---------- */
+    .equ DEMCR,                 0xE000EDFC  /* Debug Exception and Monitor Control */
+    .equ DEMCR_TRCENA,          (1 << 24)   /* active DWT/ITM                 */
+    .equ DWT_CTRL,              0xE0001000
+    .equ DWT_CTRL_CYCCNTENA,    (1 << 0)    /* active CYCCNT                  */
+    .equ DWT_CYCCNT,            0xE0001004  /* compteur de cycles, 32 bits    */
 
 /* ---- Brochage de la plateforme (guide, p. 25-29) ---------------------- */
     .equ LED_ROUGE_PIN,         9           /* LD3, PA9                      */
@@ -101,5 +102,7 @@
     .equ CLIGNOTEMENT_DEMI_MS,  250         /* 2 Hz : 250 ms allumée, 250 ms éteinte */
     .equ TOUCH_SIGNAL_MS,       100         /* extinction brève (E7)         */
 /* delay_ms : boucle calibrée. Horloge après réinitialisation : MSI 4 MHz.
- * Valeur de départ ~1000 itérations/ms ; À CALIBRER à l'oscilloscope (E8). */
-    .equ DELAY_BOUCLES_PAR_MS,  1254        /* calibré (T6) : 1000 × 1 000 000 / 797 532 */
+ * Valeur calibrée au compteur de cycles DWT (15 sept. 2026) : 1000 itérations
+ * donnaient 3192 cycles par pas (0,80 ms) ; 1270 itérations visent 4000 cycles
+ * (1,00 ms), fsm_step compris. À confirmer à l'oscilloscope (E8). */
+    .equ DELAY_BOUCLES_PAR_MS,  1270

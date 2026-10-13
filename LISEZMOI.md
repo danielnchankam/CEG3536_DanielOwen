@@ -1,95 +1,84 @@
-# CEG 3536 — Laboratoire 1 — Projet de démarrage (automne 2026)
+# CEG 3536 — Laboratoire 1 — CORRIGÉ (réservé aux assistants)
 
-Projet STM32CubeIDE en **assembleur ARM** pour la carte **NUCLEO-L552ZE-Q**
-(STM32L552ZET6QU, Cortex-M33), plateforme « Leafy ». Il correspond à l'énoncé
-*Commandes et signalisation du véhicule : RCC/GPIO, DEL, boutons, anti-rebond et
-arrêt d'urgence en assembleur ARM* (version 1.0, 12 septembre 2026).
+Ne pas distribuer aux étudiants. Ce projet est le projet de démarrage
+`CEG3536_Lab1_Demarrage` avec les exigences E2 à E9 implémentées dans
+`Core/Src/buttons.s`, `Core/Src/estop.s` et `Core/Src/fsm.s`. Les autres
+fichiers sont identiques au projet de démarrage.
 
-Le projet **compile sans avertissement et se charge tel quel**. À la séance 0,
-il réalise l'objectif attendu : après réinitialisation, la DEL rouge (PA9) est
-allumée seule (exigence E1). Les autres exigences (E2 à E9) sont à réaliser dans
-les routines marquées **À COMPLÉTER**.
+Le projet compile sans avertissement dans STM32CubeIDE 2.2.0 (Debug et Release)
+et par le `Makefile` (STM32CubeCLT 1.21.0). **Il a été exécuté sur la plateforme
+Leafy le 15 septembre 2026** : T1 à T10 réussis avec boutons simulés par SWD
+(détails dans `JOURNAL.md` et `essais/`), **puis revalidé le 12 octobre 2026**
+après les corrections de la version 1.2 (voir la section « Modifications »). Au repos, PC13, PB2 et PB5 lisent 0,
+ce qui est cohérent avec « appuyé = 1 » et `BTN_x_PUPDR` = 0 ; le niveau appuyé
+reste à confirmer par un appui physique (T4). `DELAY_BOUCLES_PAR_MS` a été
+calibrée à 1270 au compteur de cycles DWT (période de scrutation 0,999 ms à
+4 MHz, contre 0,798 ms avec la valeur de départ 1000) ; à confirmer à
+l'oscilloscope (E8). Le projet de démarrage garde 1000 : la calibration est
+exigée des étudiants.
 
-## 1. Contenu
+## Note sur les ports du débogueur (CubeIDE)
 
-| Fichier | Rôle | État |
+Si le lancement du débogage échoue avec « ST-LINK GDB server failed to start
+(exit code = 0) » ou « Error in initializing ST-LINK device. Reason: (0)
+Unknown » alors que STM32CubeProgrammer se connecte à la carte, le message est
+trompeur : c'est en général le port TCP du serveur GDB qui est inaccessible.
+Windows (Hyper-V, WSL) réserve au démarrage des plages de ports dynamiques
+visibles avec `netsh int ipv4 show excludedportrange protocol=tcp`, et le port
+par défaut de CubeIDE (61234, SWO 61235) tombe parfois dedans. Ces plages
+changent à chaque redémarrage, d'où un problème intermittent.
+
+`CEG3536_Lab1_Corrige Debug.launch` utilise donc les ports 61334 (GDB) et
+61335 (SWO), observés hors plage réservée le 12 octobre 2026. Si le problème
+revient : Debug Configurations → onglet Debugger → « Port number », choisir un
+port absent des plages affichées par `netsh`.
+
+## Ce que réalise chaque routine
+
+| Exigence | Routine | Réalisation |
 |---|---|---|
-| `Core/Src/registres.inc` | Adresses, masques et constantes (`.equ`, noms RM0438) : RCC, GPIO, EXTI, NVIC, brochage, niveaux actifs, temporisations | Fourni — **niveaux actifs et PUPDR à confirmer par mesure (T4)** |
-| `Core/Src/main.s` | `SystemInit` (vide, horloge MSI 4 MHz), `main` : `gpio_init`, `estop_init`, `fsm_init`, boucle `fsm_step` + `delay_ms(1)` | Fourni |
-| `Core/Src/gpio.s` | `gpio_init` (RCC_AHB2ENR, MODER, OTYPER, OSPEEDR, PUPDR), `led_set` (BSRR) | Fourni |
-| `Core/Src/buttons.s` | `button_raw` (IDR normalisé « appuyé = 1 »), `button_pressed` (anti-rebond, front), `delay_ms` (boucle calibrée) | `button_raw` et `delay_ms` fournis, **`button_pressed` à compléter (E3)** |
-| `Core/Src/estop.s` | `estop_init` (EXTI_EXTICR1, RTSR1/FTSR1, IMR1, NVIC), `EXTI2_IRQHandler`, `estop_flag` | **`estop_init` à faire, ISR à compléter (E4)** ; effacement de la requête fourni |
-| `Core/Src/fsm.s` | `fsm_init`, `fsm_step`, `fsm_maj_del` (seul point de mise à jour des DEL), variables `etat`, `touch_enabled`, `compteur_transitions` | `fsm_init` fourni, **transitions E2, E5, E6, E7 à compléter** |
-| `Core/Inc/lab1.h` | Prototypes C des routines (réutilisés au laboratoire 3) | Fourni |
-| `Core/Startup/startup_stm32l552zetxq.s` | Vecteurs d'interruption et démarrage, **généré par STM32CubeIDE** (à déclarer comme tel dans le rapport) | Fourni, ne pas modifier |
-| `Core/Src/syscalls.c`, `Core/Src/sysmem.c` | Fichiers de support minimaux **générés par STM32CubeIDE** (évitent les avertissements de l'éditeur de liens) ; aucun code applicatif | Fourni, ne pas modifier |
-| `STM32L552ZETXQ_FLASH.ld` | Script d'édition de liens généré par STM32CubeIDE | Fourni |
-| `Makefile` | Construction et programmation en ligne de commande (facultatif) | Fourni |
-| `JOURNAL.md` | Journal d'équipe et jalon J1 (modèle) | À tenir à chaque séance |
+| E1 | `fsm_init` | ARRÊT, variables à zéro, rouge seule par `fsm_maj_del` |
+| E2 | `fsm_step` (partie C, hors urgence) | ARRÊT → AVANT ou ARRIÈRE selon `prochain_sens` (alterne), AVANT/ARRIÈRE → ARRÊT ; `compteur_transitions++` à chaque changement d'état |
+| E3 | `button_pressed` | Compte les échantillons consécutifs différents du niveau validé ; validation après `ANTIREBOND_MS` (30) appels ; un appui maintenu = un seul événement ; le relâchement est validé de la même façon sans événement |
+| E4 | `estop_init`, `EXTI2_IRQHandler` | EXTI_EXTICR1 (champ EXTI2 = port B), RTSR1 ou FTSR1 selon le niveau actif (`.if` sur `BTN_ESTOP_ACTIF_HAUT`), IMR1, priorité NVIC 0, ISER0 ; ISR : verte et bleue éteintes, rouge allumée par BSRR, `estop_flag = 1`, effacement RPR1/FPR1, `dsb` |
+| E5 | `fsm_step` (partie A), `fsm_maj_del` | Entrée en urgence : phase = rouge allumée, compteur = 0 ; bascule toutes les 250 appels ; User lu mais ignoré ; à chaque bascule, `blink_cycles` = écart de `DWT_CYCCNT` depuis la bascule précédente (T6, demi-période ≈ 1 000 000 cycles à 4 MHz) |
+| E6 | `fsm_step` (partie C, urgence) | Touch En validé ET `button_raw(BTN_ESTOP) == 0` → ARRÊT ; E-Stop maintenu → refus, clignotement continu ; aucune reprise automatique |
+| E7 | `fsm_step` (partie C), `fsm_maj_del` | `touch_enabled ^= 1`, `touch_signal_compteur = 100` → `LED_AUCUNE` pendant 100 appels puis DEL de l'état |
+| E8 | `delay_ms` | Boucle calibrée : 1270 itérations d'environ 3 cycles + `fsm_step` (≈ 190 cycles, 50 µs) = 3998 cycles, soit 0,999 ms à 4 MHz |
+| E9 | `led_set`, `fsm_step`, `fsm_maj_del` | `led_set` éteint tout avant d'allumer une DEL ; après `led_set` hors urgence, `fsm_maj_del` relit `estop_flag` et réaffirme l'état sûr (`led_set(LED_ROUGE)`) si l'ISR est survenue pendant le pas, y compris entre les deux écritures BSRR de `led_set` : la dernière écriture sur les DEL est toujours l'état sûr ; seul le chemin E6 quitte l'urgence ; un second E-Stop en urgence (ou les rebonds du relâchement) consomme le drapeau sans transition ni relance du clignotement |
 
-## 2. Ouvrir le projet dans STM32CubeIDE 2.2.0
+## Comportements à vérifier lors des démonstrations (T1 à T10)
 
-1. Copier le dossier `CEG3536_Lab1_Demarrage` dans votre espace de travail et le
-   renommer `CEG3536_Lab1_<équipe>` (renommer aussi dans *Project > Properties*
-   après l'import, ou laisser CubeIDE le faire avec *Rename*).
-2. *File > Import… > General > Existing Projects into Workspace*, choisir le dossier,
-   cocher le projet, *Finish*.
-3. *Project > Build Project* (marteau). La console doit se terminer sans
-   `warning`. Le fichier `Debug/CEG3536_Lab1_<équipe>.elf` est produit.
-4. Brancher la Nucleo (ST-LINK), *Run > Debug As > STM32 C/C++ Application*.
-   Le débogueur s'arrête sur `main` ; *Resume* (F8) : la DEL rouge s'allume.
-5. Fenêtres utiles : *Window > Show View > SFRs* (registres RCC, GPIOx, EXTI, NVIC),
-   *Expressions* ou *Memory* pour `etat`, `estop_flag`, `touch_enabled`,
-   `compteur_transitions`, `btn_valide`, `btn_compteur`.
+- **T3** : `compteur_transitions` (watch) augmente exactement de 1 par appui validé ; un appui maintenu 2 s n'ajoute que 1. Un rebond plus court que 30 ms ne crée pas d'événement.
+- **T5** : la mise en état sûr est faite dans l'ISR, donc le délai PB2 → PC7/PB7 est de quelques microseconde même si la boucle est dans `delay_ms`. Une équipe qui met la DEL en sécurité seulement dans `fsm_step` aura un délai jusqu'à 1 ms plus la durée de la boucle : acceptable (< 10 ms) mais niveau « satisfaisant » au critère A4.
+- **T6** : période 500 ms ± 10 % dépend de la calibration de `delay_ms` ; la mesure doit être rapportée (E8, C4). Le corrigé expose `blink_cycles` (watch), écart de `DWT_CYCCNT` entre deux basculements de la rouge : c'est une **demi-période**, la période vaut 2 × `blink_cycles` / 4 000 000 s. Valeurs relevées le 12 octobre 2026 : 1 000 268 à 1 001 114 cycles, soit 250,1 à 250,3 ms (2,0 Hz). Une équipe qui mesure à l'oscilloscope ou par SWD sans variable reste acceptable si la méthode est décrite.
+- **T7** : Touch En avec E-Stop maintenu doit être refusé : vérifier que `button_raw` et non `button_pressed` est utilisé pour tester l'état d'E-Stop.
+- **T8** : User pendant l'urgence ne change ni `etat` ni `compteur_transitions`.
+- **T10** : appuis simultanés User et Touch En hors urgence : les deux événements sont traités dans le même pas (transition puis bascule de `touch_enabled` avec extinction brève) ; jamais deux DEL allumées. E-Stop pendant une transition : l'ISR force l'état sûr, et `fsm_maj_del` le réaffirme en fin de pas si `estop_flag` est levé, ce qui ferme la fenêtre où `led_set` rallumerait la DEL de l'ancien état (voir « Erreurs fréquentes »). Un second E-Stop en urgence ne compte pas de transition et ne perturbe pas la période.
 
-Le projet est de type « Empty » : pas de HAL, pas de CubeMX. Le préprocesseur C
-est actif sur les fichiers `.s` (option `-x assembler-with-cpp`), ce qui permet
-`#include "registres.inc"` et les expressions comme `(3 << (2 * LED_ROUGE_PIN))`.
+## Erreurs fréquentes attendues chez les étudiants
 
-## 3. Construction en ligne de commande (facultatif)
+- Chercher `SYSCFG_EXTICR` : sur la STM32L5, le registre est `EXTI_EXTICR1` (offset 0x60 de 0x4002F400).
+- Effacer la requête dans le mauvais registre : `RPR1` pour un front montant, `FPR1` pour un front descendant ; le corrigé efface les deux.
+- Priorité NVIC écrite sur 32 bits à `0xE000E400 + 13` au lieu d'un octet (`strb`) : écrase les priorités des IRQ 13 à 16.
+- `push {r4, lr}` puis appel d'une routine : correct ; `push {r4, r5, lr}` (12 octets) puis appel : pile non alignée sur 8 aux interfaces publiques (B2).
+- Anti-rebond par simple attente de 20 ms dans `button_pressed` : bloque la boucle et fausse le clignotement ; la version par échantillons ne bloque jamais.
+- `cbz`/`cbnz` vers une étiquette trop éloignée : erreur d'assemblage ; utiliser `cmp` + `beq`.
+- Mise à jour des DEL dispersée dans `fsm_step` au lieu d'un seul point (`fsm_maj_del`) : critère B3.
+- Course entre l'ISR et `led_set` : `led_set` éteint tout puis allume ; si l'ISR E-Stop survient entre les deux écritures (ou après la lecture du drapeau dans `fsm_step`), la boucle rallume la DEL de l'ancien état par-dessus l'état sûr jusqu'au pas suivant (deux DEL allumées pendant au plus 1 ms, fenêtre rare). Le corrigé relit `estop_flag` après `led_set` et réaffirme l'état sûr. Une équipe qui ne traite pas ce cas reste dans les 10 ms de E4 ; à signaler au critère A4/B4 sans pénalité majeure.
+- Relance du clignotement à chaque E-Stop en urgence : les rebonds du relâchement d'E-Stop (fronts montants) relancent alors la phase et faussent la mesure T6 ; le corrigé consomme le drapeau sans rien changer quand l'état est déjà URGENCE.
+- Mesurer T6 sans variable : l'énoncé attend `blink_cycles` (écart de `DWT_CYCCNT` à chaque basculement) en watch ; DWT exige `DEMCR.TRCENA` puis `DWT_CTRL.CYCCNTENA`.
 
-```
-make            # build/CEG3536_Lab1.elf et .bin (STM32CubeCLT 1.21.0)
-make flash      # programme la carte par ST-LINK
-```
+## Modifications de la version 1.2 (12 octobre 2026)
 
-Le `make` de STM32CubeIDE se trouve dans
-`C:\ST\STM32CubeIDE_2.2.0\STM32CubeIDE\plugins\com.st.stm32cube.ide.mcu.externaltools.make.win32_*\tools\bin`.
+Revue du corrigé contre l'énoncé v1.2 (CEG3536_Lab1_Automne_2026_v1.2.docx) :
 
-## 4. Ce qu'il reste à faire, exigence par exigence
+- `fsm.s`, `fsm_maj_del` : après `led_set` hors urgence, relecture de `estop_flag` et réaffirmation de l'état sûr (E4, E9 : jamais deux DEL allumées, quel que soit l'instant de l'ISR).
+- `fsm.s`, `fsm_step` partie A : un E-Stop reçu alors que l'état est déjà URGENCE consomme le drapeau sans relancer la phase du clignotement (période T6 stable malgré les rebonds du relâchement).
+- `fsm.s`, `fsm_init`, `fsm_maj_del` : variable globale `blink_cycles` (T6) alimentée par `DWT_CYCCNT` à chaque basculement de la rouge ; DWT activé dans `fsm_init`. Constantes `DEMCR`, `DWT_CTRL`, `DWT_CYCCNT` ajoutées à `registres.inc`.
+- `registres.inc` : commentaire de `EXTICR1_EXTI2_POS` corrigé (champ de 8 bits, bits 23:16).
+- `estop.s` : commentaire de l'ISR précisant pourquoi la cause n'est pas relue (vecteur dédié à la ligne 2).
+- `lab1.h` : `blink_cycles`, `btn_valide` et `btn_compteur` déclarés.
+- `essais/` : `vars.sh` lit `blink_cycles` ; `estop.sh` simule E-Stop (SWIER1 ou PB2) et Touch En (PB5).
 
-| Exigence | Où | Quoi |
-|---|---|---|
-| E1 Initialisation | `fsm_init` | Fourni : ARRÊT, rouge seule |
-| E2 Défilement par User | `fsm_step` (étape B) | Transitions ARRÊT → AVANT → ARRÊT → ARRIÈRE → ARRÊT, `compteur_transitions++` |
-| E3 Anti-rebond et front | `button_pressed` | Fenêtre `ANTIREBOND_MS` par comptage d'échantillons ; un appui = un événement |
-| E4 E-Stop par interruption | `estop_init`, `EXTI2_IRQHandler` | EXTICR1/RTSR1 ou FTSR1/IMR1, priorité NVIC 0, ISR : état sûr + drapeau + effacement |
-| E5 Signalisation d'urgence | `fsm_step` (A), `fsm_maj_del` | Clignotement 2 Hz par `clignote_compteur` / `clignote_phase`, User ignoré |
-| E6 Acquittement | `fsm_step` (B) | Touch En validé ET `button_raw(BTN_ESTOP) == 0` → ARRÊT |
-| E7 Touch En hors urgence | `fsm_step` (B), `fsm_maj_del` | `touch_enabled ^= 1`, extinction brève `TOUCH_SIGNAL_MS` |
-| E8 Temporisation | `delay_ms`, `registres.inc` | Calibrer `DELAY_BOUCLES_PAR_MS` à l'oscilloscope et rapporter la valeur |
-| E9 Robustesse | ensemble | Vérifier les invariants avec les essais T10 |
-
-## 5. Points d'attention pour la STM32L5
-
-- **EXTICR est dans EXTI, pas dans SYSCFG** (RM0438, section 16) :
-  `EXTI_EXTICR1` à l'offset 0x60 de `EXTI_BASE` (0x4002F400), champ EXTI2 aux
-  bits 18:16, valeur 1 = port B. `RCC_APB2ENR.SYSCFGEN` n'est pas nécessaire.
-- **Deux registres de requête** : `EXTI_RPR1` (front montant) et `EXTI_FPR1`
-  (front descendant), effacés par écriture de 1 (fourni dans l'ISR).
-- **EXTI2_IRQn = 13** : priorité dans l'octet `0xE000E400 + 13`, activation par
-  `NVIC_ISER0` bit 13. 3 bits de priorité utiles (7:5) ; 0x00 = la plus élevée.
-- **TrustZone désactivée (TZEN = 0)** : les périphériques sont aux adresses
-  0x4xxx_xxxx (alias non sécurisé) comme dans les exemples du cours.
-- **AAPCS** : paramètres R0–R3, retour R0 ; préserver R4–R11 modifiés ; sauver LR
-  si la routine appelle ; pile alignée sur 8 octets aux appels publics
-  (`push {r4, lr}` ou `push {r4, r5, r6, lr}`, jamais un nombre impair de mots).
-- **ISR** : le matériel empile R0–R3, R12, LR, PC, xPSR ; une ISR feuille
-  utilise R0–R3 librement et retourne par `bx lr`.
-
-## 6. Mesures à consigner dans le rapport
-
-Niveaux logiques de PC13, PB2, PB5 relâché/appuyé (T4) → ajuster
-`BTN_x_ACTIF_HAUT` et `BTN_x_PUPDR` dans `registres.inc` ; durée de rebond sur
-PC13 ; fenêtre d'anti-rebond retenue ; période de clignotement (T6) ; délai
-PB2 → PC7/PB7 (T5) ; valeur calibrée de `DELAY_BOUCLES_PAR_MS` (E8).
+Revalidé sur carte le 12 octobre 2026 (voir `JOURNAL.md`) : T1, T2, T5, T6, T7, T10 (second E-Stop) réussis ; compilation sans avertissement (Makefile).
